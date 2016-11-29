@@ -1,3 +1,3 @@
 #!/bin/sh
 export PATH="/home/solar/.anyenv/envs/pyenv/shims:${PATH}"
-python /home/solar/wsato_qiligeer_for_api/service.py &> /home/solar/wsato_qiligeer_for_api/scripts/log.txt
+python /home/solar/wsato_qiligeer_dcm_for_api/service.py &> /home/solar/wsato_qiligeer_for_dcm_api/scripts/log.txt

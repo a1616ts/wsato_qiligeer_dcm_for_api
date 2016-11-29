@@ -19,11 +19,10 @@ channel2.queue_declare(queue = 'from_middleware_to_agent', durable = True)
 def from_api_to_middleware_callback(ch, method, properties, body):
     decoded_json = json.loads(body.decode('utf-8'))
     user_id = decoded_json['user_id']
-    display_name = decoded_json['display_name']
+    display_name = decoded_json['name']
     operation = decoded_json['op']
 
     db = dataset.connect('mysql://dcm_user:dcmUser@1115@127.0.0.1/wsato_qiligeer')
-
     if operation == 'create':
         # Select server
         vc_servers_table = db['vc_servers']
@@ -32,6 +31,7 @@ def from_api_to_middleware_callback(ch, method, properties, body):
         server_name = results['name']
         free_size_gb = int(results['free_size_gb'])
         size = int(decoded_json['size'])
+
         # Check free space
         if free_size_gb < size:
             pass # TODO logger
@@ -53,7 +53,7 @@ def from_api_to_middleware_callback(ch, method, properties, body):
             # Create domains record.
             domain_id = domains_table.insert(dict(name = domain_name, display_name = display_name, user_id = user_id, server_id = server_id))
             # Update vc_server
-            vc_servers_table.update(dict(id = server_id, free_size_gb = free_size_gb - size), ['id']
+            vc_servers_table.update(dict(id = server_id, free_size_gb = free_size_gb - size), ['id'])
             db.commit()
         except:
             db.rollback()
@@ -66,9 +66,12 @@ def from_api_to_middleware_callback(ch, method, properties, body):
         chn.queue_declare(queue = 'from_middleware_to_agent', durable=True)
 
         enqueue_message = {
-            'op'  : operation,
-            'name' : domain_name,
-            'size' : size
+            'op'    : operation,
+            'name'  : domain_name,
+            'size'  : size,
+            'os'    : decoded_json['os'],
+            'ram'   : decoded_json['ram'],
+            'vcpus' : decoded_json['vcpus']
         }
         # Enqueue
         chn.basic_publish(exchange = '',
@@ -91,10 +94,8 @@ def from_api_to_middleware_callback(ch, method, properties, body):
         result       = domain_table.find_one(domain_id = domain_id)
 
         # TODO Check operation
-
-
         enqueue_message = {
-            'ope'  : operation,
+            'op'  : operation,
             'name' : result['domain_name']
         }
 
