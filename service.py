@@ -2,6 +2,7 @@ import pika
 import json
 import dataset
 import uuid
+import traceback
 import pymysql
 pymysql.install_as_MySQLdb()
 
@@ -31,10 +32,13 @@ def from_api_to_middleware_callback(ch, method, properties, body):
         server_name = results['name']
         free_size_gb = int(results['free_size_gb'])
         size = int(decoded_json['size'])
+        ram = int(decoded_json['ram'])
+        vcpus = int(decoded_json['vcpus'])
+        # TODO add os
 
         # Check free space
         if free_size_gb < size:
-            pass # TODO logger
+            return # TODO logger
 
         # Check name
         domains_table = db['domains']
@@ -43,7 +47,7 @@ def from_api_to_middleware_callback(ch, method, properties, body):
             name     = display_name)
         if result != None:
             # TODO logger
-            pass
+            return
 
         # Create uniquename and mapping
         domain_name = uuid.uuid4().hex
@@ -51,13 +55,14 @@ def from_api_to_middleware_callback(ch, method, properties, body):
         db.begin()
         try:
             # Create domains record.
-            domain_id = domains_table.insert(dict(name = domain_name, display_name = display_name, user_id = user_id, server_id = server_id))
+            domain_id = domains_table.insert(dict(name = domain_name, display_name = display_name, size = size, vcpus = vcpus, ram = ram,  user_id = user_id, server_id = server_id))
             # Update vc_server
             vc_servers_table.update(dict(id = server_id, free_size_gb = free_size_gb - size), ['id'])
             db.commit()
         except:
+            print(traceback.format_exc())
             db.rollback()
-            pass
+            return
 
         # Select Vhosts
         con = pika.BlockingConnection(pika.ConnectionParameters(
@@ -69,7 +74,7 @@ def from_api_to_middleware_callback(ch, method, properties, body):
             'op'    : operation,
             'name'  : domain_name,
             'size'  : size,
-            'os'    : decoded_json['os'],
+            'os'    : 'centos7',# decoded_json['os'],
             'ram'   : decoded_json['ram'],
             'vcpus' : decoded_json['vcpus']
         }
@@ -87,7 +92,7 @@ def from_api_to_middleware_callback(ch, method, properties, body):
         if result == None:
             print('bad permission')
             # TODO Write status
-            pass
+            return
 
         domain_id    = result['domain_id']
         domain_table = db['domains']
