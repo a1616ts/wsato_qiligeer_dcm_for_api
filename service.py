@@ -9,6 +9,7 @@ import logging.handlers
 pymysql.install_as_MySQLdb()
 
 
+# Logging.
 logger = logging.getLogger('wsato_qiligeer_dcm_for_api')
 logger.setLevel(logging.WARNING)
 handler = logging.handlers.TimedRotatingFileHandler(
@@ -19,6 +20,7 @@ handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 logger.addHandler(handler)
 
 
+# Create connections for RabbitMQ.
 credentials = pika.PlainCredentials('server1_dcm', '8nfdsS12gaf')
 connection  = pika.BlockingConnection(pika.ConnectionParameters(
     virtual_host = '/server1', credentials = credentials))
@@ -40,30 +42,30 @@ def from_api_to_middleware_callback(ch, method, properties, body):
     db = dataset.connect('mysql://dcm_user:dcmUser@1115@localhost/wsato_qiligeer')
 
     if operation == 'create':
+
         # Select server
-        server_id = results['id']
-        server_name = results['name']
-        os = results['os']
-        free_size_gb = int(results['free_size_gb'])
         size = int(decoded_json['size'])
         ram = int(decoded_json['ram'])
         vcpus = int(decoded_json['vcpus'])
 
+        server_id = None
+        server_name = None
 
-        target_server = None
         t_size = 0
         t_core = 0
         t_ram = 0
-        vc_servers_table = db['vc_servers']
-        for server in vc_servers_table.find:
-            t_size = int(vc_server['free_size_gb']) - size
-            t_core = int(vc_server['free_cpu_core']) - vcpus
-            t_ram = int(vc_server['free_ram_byte']) - ram
+        results = db.query('SELECT * FROM vc_servers')
+        for server in results:
+            t_size = int(server['free_size_gb']) - size
+            t_core = int(server['free_cpu_core']) - vcpus
+            t_ram = int(server['free_memory_byte']) - ram
             if 0 < t_size and  0 < t_core and 0 < t_ram:
-                target_server = server
+                server_id = server['id']
+                server_name = server['name']
+                break
 
         # Check free space
-        if target_server == None:
+        if server_id == None:
             return
 
         # Check name
@@ -73,7 +75,7 @@ def from_api_to_middleware_callback(ch, method, properties, body):
             name     = display_name)
 
         if result != None:
-            logger.eror('Can not create vm because of name duplication.')
+            logger.error('Can not create vm because of name duplication.')
             return
 
         # Create unique name
@@ -82,14 +84,14 @@ def from_api_to_middleware_callback(ch, method, properties, body):
         db.begin()
         try:
             # Create domains record
-            domain_id = domains_table.insert(dict(name = name, display_name = display_name, size = size, vcpus = vcpus, ram = ram,  user_id = user_id, server_id = server_id))
+            domain_id = domains_table.insert(dict(name = name, os = decoded_json['os'],  display_name = display_name, size = size, vcpus = vcpus, ram = ram,  user_id = user_id, server_id = server_id))
             # Update vc_server
-            vc_servers_table.update(dict(id = server_id, free_size_gb = t_size, free_cpu_core = t_core, free_ram_byte = t_ram), ['id'])
+            db['vc_servers'].update(dict(id = server_id, free_size_gb = t_size, free_cpu_core = t_core, free_memory_byte = t_ram), ['id'])
             db.commit()
         except:
             db.rollback()
-            logger.eror('Insert or Update failed due to data error.')
-            logger.eror(traceback.format_exc())
+            logger.error('Insert or Update failed due to data error.')
+            logger.error(traceback.format_exc())
             return
 
         # Select Vhosts
@@ -111,26 +113,28 @@ def from_api_to_middleware_callback(ch, method, properties, body):
                           routing_key = 'from_middleware_to_agent',
                           body = json.dumps(enqueue_message))
         con.close()
+
     else:
         # Authentication check
         domains_table = db['domains']
         result = domains_table.find_one(
-            user_id  = user_id,
-            name     = display_name)
+            user_id      = user_id,
+            display_name = display_name)
+
         if result == None:
             logger.eror('Can not operation vm because of it is not exists.')
             return
 
         domain_id = result['id']
-        result    = domain_table.find_one(domain_id = domain_id)
+        result    = domains_table.find_one(id = domain_id)
 
         enqueue_message = {
-            'op'  : operation,
+            'op'   : operation,
             'name' : display_name
         }
 
-        server_table = db['servers']
-        result = server_table.find_one(id = server_id)
+        server_table = db['vc_servers']
+        result = server_table.find_one(id = result['server_id'])
 
         # Select Vhosts
         con = pika.BlockingConnection(pika.ConnectionParameters(
