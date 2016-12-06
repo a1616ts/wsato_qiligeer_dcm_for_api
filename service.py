@@ -9,7 +9,7 @@ import logging.handlers
 pymysql.install_as_MySQLdb()
 
 
-# Logging.
+# Logging
 logger = logging.getLogger('wsato_qiligeer_dcm_for_api')
 logger.setLevel(logging.WARNING)
 handler = logging.handlers.TimedRotatingFileHandler(
@@ -20,7 +20,7 @@ handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 logger.addHandler(handler)
 
 
-# Create connections for RabbitMQ.
+# Create connections for RabbitMQ
 credentials = pika.PlainCredentials('server1_dcm', '8nfdsS12gaf')
 connection  = pika.BlockingConnection(pika.ConnectionParameters(
     virtual_host = '/server1', credentials = credentials))
@@ -43,17 +43,17 @@ def from_api_to_middleware_callback(ch, method, properties, body):
 
     if operation == 'create':
 
-        # Select server
+        # Select vm server
         size = int(decoded_json['size'])
         ram = int(decoded_json['ram'])
         vcpus = int(decoded_json['vcpus'])
 
         server_id = None
         server_name = None
-
         t_size = 0
         t_core = 0
         t_ram = 0
+
         results = db.query('SELECT * FROM vc_servers')
         for server in results:
             t_size = int(server['free_size_gb']) - size
@@ -64,8 +64,8 @@ def from_api_to_middleware_callback(ch, method, properties, body):
                 server_name = server['name']
                 break
 
-        # Check free space
         if server_id == None:
+            logger.error('Can not create vm because insufficient capacity.')
             return
 
         # Check name
@@ -115,7 +115,7 @@ def from_api_to_middleware_callback(ch, method, properties, body):
         con.close()
 
     else:
-        # Authentication check
+        # Authorization check
         domains_table = db['domains']
         result = domains_table.find_one(
             user_id      = user_id,
